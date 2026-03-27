@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_barcode_off_import_wizard_form" model="ir.ui.view">
+        <field name="name">barcode.off.import.wizard.form</field>
+        <field name="model">barcode.off.import.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Import Product From Barcode">
+                <group>
+                    <field name="barcode" placeholder="Scan or enter barcode"/>
+                    <field name="quantity"/>
+                    <field name="location_id"/>
+                    <field name="product_tmpl_id" readonly="1"/>
+                </group>
+                <footer>
+                    <button name="action_import_from_open_food_facts" type="object" string="Import" class="btn-primary"/>
+                    <button string="Cancel" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_barcode_off_import_wizard" model="ir.actions.act_window">
+        <field name="name">Barcode Import</field>
+        <field name="res_model">barcode.off.import.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="view_barcode_off_import_wizard_form"/>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_barcode_off_root" name="Barcode OFF" sequence="5"/>
+    <menuitem id="menu_barcode_off_import" name="Import Product" parent="menu_barcode_off_root" action="action_barcode_off_import_wizard" sequence="10"/>
+</odoo>
