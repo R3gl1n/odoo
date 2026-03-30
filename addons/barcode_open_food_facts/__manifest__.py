@@ -9,6 +9,11 @@
         "security/ir.model.access.csv",
         "views/barcode_import_wizard_views.xml",
     ],
+    "assets": {
+        "web.assets_backend": [
+            "barcode_open_food_facts/static/src/js/barcode_auto_import.js",
+        ],
+    },
     "installable": True,
     "application": True,
 }
