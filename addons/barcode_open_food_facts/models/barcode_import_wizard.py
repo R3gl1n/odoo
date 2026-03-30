@@ -1,3 +1,5 @@
+import base64
+
 import requests
 
 from odoo import _, fields, models
@@ -25,6 +27,100 @@ class BarcodeOffImportWizard(models.TransientModel):
             or product_data.get("abbreviated_product_name")
             or barcode
         )
+
+    def _prepare_description_sale(self, product_data):
+        ingredients_text = product_data.get("ingredients_text")
+        if ingredients_text:
+            return ingredients_text.strip()
+        return False
+
+    def _prepare_internal_description(self, product_data):
+        lines = []
+        brands = product_data.get("brands")
+        quantity_text = product_data.get("quantity")
+        nutriscore = product_data.get("nutriscore_grade")
+        nova_group = product_data.get("nova_group")
+
+        if brands:
+            lines.append(_("Brand: %s") % brands)
+        if quantity_text:
+            lines.append(_("Package Quantity: %s") % quantity_text)
+        if nutriscore:
+            lines.append(_("Nutri-Score: %s") % str(nutriscore).upper())
+        if nova_group:
+            lines.append(_("NOVA Group: %s") % nova_group)
+
+        if not lines:
+            return False
+        return "\n".join(lines)
+
+    def _prepare_logistics_vals(self, product_data):
+        quantity = product_data.get("product_quantity")
+        unit = (product_data.get("product_quantity_unit") or "").strip().lower()
+        if quantity in (None, False):
+            return {}
+
+        try:
+            quantity = float(quantity)
+        except (TypeError, ValueError):
+            return {}
+
+        vals = {}
+        if unit == "g":
+            vals["weight"] = quantity / 1000.0
+        elif unit == "kg":
+            vals["weight"] = quantity
+        elif unit == "ml":
+            vals["volume"] = quantity / 1_000_000.0
+        elif unit == "cl":
+            vals["volume"] = quantity / 100_000.0
+        elif unit == "dl":
+            vals["volume"] = quantity / 10_000.0
+        elif unit == "l":
+            vals["volume"] = quantity / 1000.0
+        return vals
+
+    def _prepare_image_1920(self, product_data):
+        image_url = product_data.get("image_front_url") or product_data.get("image_url")
+        if not image_url:
+            return False
+
+        headers = {
+            "User-Agent": "ERP-BarcodeOFF/1.0 (local-dev)",
+            "Accept": "image/*",
+        }
+        try:
+            response = requests.get(image_url, headers=headers, timeout=12)
+            response.raise_for_status()
+        except requests.RequestException:
+            return False
+
+        content_type = response.headers.get("Content-Type", "")
+        if "image" not in content_type:
+            return False
+
+        return base64.b64encode(response.content)
+
+    def _prepare_product_vals(self, barcode, product_data):
+        name = self._prepare_product_name(product_data, barcode)
+        category = self._prepare_category(product_data)
+
+        vals = {
+            "name": name,
+            "default_code": barcode,
+            "description_sale": self._prepare_description_sale(product_data),
+            "description": self._prepare_internal_description(product_data),
+        }
+        if category:
+            vals["categ_id"] = category.id
+
+        vals.update(self._prepare_logistics_vals(product_data))
+
+        image_1920 = self._prepare_image_1920(product_data)
+        if image_1920:
+            vals["image_1920"] = image_1920
+
+        return vals
 
     def _prepare_category(self, product_data):
         category_name = False
@@ -77,17 +173,27 @@ class BarcodeOffImportWizard(models.TransientModel):
 
     def _upsert_product(self, barcode, product_data):
         product = self.env["product.product"].search([("barcode", "=", barcode)], limit=1)
-        name = self._prepare_product_name(product_data, barcode)
-        category = self._prepare_category(product_data)
-
-        vals = {
-            "name": name,
-        }
-        if category:
-            vals["categ_id"] = category.id
+        vals = self._prepare_product_vals(barcode, product_data)
 
         if product:
-            product.product_tmpl_id.write(vals)
+            template = product.product_tmpl_id
+            update_vals = {
+                "name": vals["name"],
+                "categ_id": vals.get("categ_id"),
+            }
+            optional_fields = [
+                "default_code",
+                "description",
+                "description_sale",
+                "weight",
+                "volume",
+                "image_1920",
+            ]
+            for field_name in optional_fields:
+                if vals.get(field_name) and not template[field_name]:
+                    update_vals[field_name] = vals[field_name]
+            update_vals = {key: value for key, value in update_vals.items() if value is not None}
+            template.write(update_vals)
             return product
 
         vals["type"] = "consu"
