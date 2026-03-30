@@ -6,6 +6,7 @@
         <field name="arch" type="xml">
             <form string="Import Product From Barcode">
                 <group>
+                    <field name="_barcode_scanned" widget="barcode_handler" invisible="1"/>
                     <field name="barcode" placeholder="Scan or enter barcode"/>
                     <field name="quantity"/>
                     <field name="location_id"/>

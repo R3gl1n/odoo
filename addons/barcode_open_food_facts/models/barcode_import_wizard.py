@@ -8,6 +8,7 @@ from odoo.exceptions import UserError
 
 class BarcodeOffImportWizard(models.TransientModel):
     _name = "barcode.off.import.wizard"
+    _inherit = "barcodes.barcode_events_mixin"
     _description = "Import product by barcode from Open Food Facts"
 
     barcode = fields.Char(required=True)
@@ -19,6 +20,10 @@ class BarcodeOffImportWizard(models.TransientModel):
         default=lambda self: self.env.ref("stock.stock_location_stock", raise_if_not_found=False),
     )
     product_tmpl_id = fields.Many2one("product.template", readonly=True)
+
+    def on_barcode_scanned(self, barcode):
+        self.ensure_one()
+        self.barcode = (barcode or "").strip()
 
     def _prepare_product_name(self, product_data, barcode):
         return (
@@ -169,7 +174,21 @@ class BarcodeOffImportWizard(models.TransientModel):
 
         if request_error:
             raise UserError(_("Open Food Facts request failed: %s") % request_error) from request_error
-        raise UserError(_("No product found on Open Food Facts for barcode %s") % barcode)
+        return False
+
+    def _upsert_fallback_product(self, barcode):
+        product = self.env["product.product"].search([("barcode", "=", barcode)], limit=1)
+        if product:
+            return product
+
+        template = self.env["product.template"].create({
+            "name": _("Unknown Product (%s)") % barcode,
+            "default_code": barcode,
+            "description": _("Automatically created because no Open Food Facts match was found."),
+            "type": "consu",
+        })
+        template.product_variant_id.barcode = barcode
+        return template.product_variant_id
 
     def _upsert_product(self, barcode, product_data):
         product = self.env["product.product"].search([("barcode", "=", barcode)], limit=1)
@@ -216,7 +235,10 @@ class BarcodeOffImportWizard(models.TransientModel):
             raise UserError(_("Please provide a barcode."))
 
         product_data = self._fetch_off_product(barcode)
-        product = self._upsert_product(barcode, product_data)
+        if product_data:
+            product = self._upsert_product(barcode, product_data)
+        else:
+            product = self._upsert_fallback_product(barcode)
         self._apply_quantity(product)
         self.product_tmpl_id = product.product_tmpl_id
 
