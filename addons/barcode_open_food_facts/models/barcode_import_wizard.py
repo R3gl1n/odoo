@@ -33,11 +33,52 @@ class BarcodeOffImportWizard(models.TransientModel):
             or barcode
         )
 
+    def _prepare_nutrition_info(self, product_data):
+        """Extract nutritional values from OFF product data."""
+        nutrition = product_data.get("nutriments", {})
+        if not nutrition:
+            return False
+        
+        lines = []
+        # Typical nutrition facts per 100g
+        energy = nutrition.get("energy-kcal_100g")
+        fat = nutrition.get("fat_100g")
+        carbs = nutrition.get("carbohydrates_100g")
+        protein = nutrition.get("proteins_100g")
+        salt = nutrition.get("salt_100g")
+        fiber = nutrition.get("fiber_100g")
+        
+        if energy:
+            lines.append(_("Energy: %.0f kcal/100g") % energy)
+        if fat:
+            lines.append(_("Fat: %.1f g/100g") % fat)
+        if carbs:
+            lines.append(_("Carbs: %.1f g/100g") % carbs)
+        if protein:
+            lines.append(_("Protein: %.1f g/100g") % protein)
+        if salt:
+            lines.append(_("Salt: %.2f g/100g") % salt)
+        if fiber:
+            lines.append(_("Fiber: %.1f g/100g") % fiber)
+        
+        if not lines:
+            return False
+        return "\n".join(lines)
+
     def _prepare_description_sale(self, product_data):
+        # Combine ingredients and nutrition info
         ingredients_text = product_data.get("ingredients_text")
+        nutrition_info = self._prepare_nutrition_info(product_data)
+        
+        parts = []
         if ingredients_text:
-            return ingredients_text.strip()
-        return False
+            parts.append(_("Ingredients:\n%s") % ingredients_text.strip())
+        if nutrition_info:
+            parts.append(_("Nutrition Facts (per 100g):\n%s") % nutrition_info)
+        
+        if not parts:
+            return False
+        return "\n\n".join(parts)
 
     def _prepare_internal_description(self, product_data):
         lines = []
@@ -45,15 +86,32 @@ class BarcodeOffImportWizard(models.TransientModel):
         quantity_text = product_data.get("quantity")
         nutriscore = product_data.get("nutriscore_grade")
         nova_group = product_data.get("nova_group")
+        ecoscore = product_data.get("ecoscore_grade")
+        manufacturers = product_data.get("manufacturers")
+        origins = product_data.get("countries_tags") or []
+        labels = product_data.get("labels_tags") or []
+        allergens = product_data.get("allergens") or product_data.get("allergens_from_ingredients")
 
         if brands:
             lines.append(_("Brand: %s") % brands)
         if quantity_text:
             lines.append(_("Package Quantity: %s") % quantity_text)
+        if manufacturers:
+            lines.append(_("Manufacturer: %s") % manufacturers)
+        if origins:
+            origin_str = ", ".join([o.replace("-", " ").title() for o in origins[:3]])
+            lines.append(_("Origin: %s") % origin_str)
         if nutriscore:
             lines.append(_("Nutri-Score: %s") % str(nutriscore).upper())
+        if ecoscore:
+            lines.append(_("Eco-Score: %s") % str(ecoscore).upper())
         if nova_group:
             lines.append(_("NOVA Group: %s") % nova_group)
+        if allergens:
+            lines.append(_("Allergens: %s") % allergens)
+        if labels:
+            label_str = ", ".join([l.replace("-", " ").title() for l in labels[:5]])
+            lines.append(_("Labels/Certifications: %s") % label_str)
 
         if not lines:
             return False
